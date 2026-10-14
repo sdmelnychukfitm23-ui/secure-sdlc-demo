@@ -1,0 +1,27 @@
+name: SAST
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install tools
+        run: pip install bandit semgrep
+      - name: Bandit
+        run: bandit -r src -f html -o bandit-report.html || true
+      - name: Semgrep
+        run: semgrep scan --config p/python --config p/flask --config p/owasp-top-ten --json -o semgrep-report.json src || true
+      - name: Save reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-reports
+          path: |
+            bandit-report.html
+            semgrep-report.json
