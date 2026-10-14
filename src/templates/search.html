@@ -1,0 +1,3 @@
+     <form><input name="q" value="{{ q }}"><button>Search</button></form>
+     <p>SQL: {{ sql }}</p>
+     {% for r in rows %}<p>{{ r["title"] }} — {{ r["body"] }}</p>{% endfor %}
