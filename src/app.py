@@ -1,10 +1,22 @@
-from flask import Flask, request, render_template, redirect, make_response, session
+from flask import Flask, request, render_template, redirect, session
 from markupsafe import escape
+from werkzeug.security import check_password_hash
+import logging
 import os
 import sqlite3
 
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("auth")
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "hardcoded-dev-secret")  # intentionally weak
+# FIXED (R4, STOR-1): секрет береться зі змінної оточення
+app.secret_key = os.environ["SECRET_KEY"]
+# FIXED (R6, CONF-1): безпечні cookie
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 DB_PATH = os.environ.get("DB_PATH", "demo.sqlite3")
 
@@ -17,7 +29,6 @@ def get_db():
 
 @app.after_request
 def set_security_headers(resp):
-    # FIXED (R2, CONF-1): заголовки безпеки
     resp.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; form-action 'self'"
     resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["X-Content-Type-Options"] = "nosniff"
@@ -37,7 +48,6 @@ def index():
 
 @app.route("/echo")
 def echo():
-    # FIXED (R2): екранування користувацького вводу
     msg = request.args.get("msg", "")
     return f"<h1>Echo</h1><p>{escape(msg)}</p>"
 
@@ -47,7 +57,6 @@ def search():
     q = request.args.get("q", "")
     conn = get_db()
     cur = conn.cursor()
-    # FIXED (R1): параметризований запит замість f-рядка
     sql = "SELECT id, title, body FROM posts WHERE title LIKE ? OR body LIKE ?"
     pattern = f"%{q}%"
     rows = cur.execute(sql, (pattern, pattern)).fetchall()
@@ -61,13 +70,14 @@ def login():
         password = request.form.get("password", "")
         conn = get_db()
         cur = conn.cursor()
-        # Passwords stored in plaintext (intentionally bad)
         row = cur.execute("SELECT id, username, password FROM users WHERE username = ?", (username,)).fetchone()
-        if row and row["password"] == password:
+        # FIXED (R3, AUTH-1): перевірка хешу, а не порівняння тексту
+        if row and check_password_hash(row["password"], password):
             session["user_id"] = row["id"]
-            resp = make_response(redirect("/profile"))
-            # Missing security flags intentionally
-            return resp
+            # FIXED (LOG-1): журнал входів без паролів
+            log.info("Успішний вхід: користувач=%r, IP=%s", username, request.remote_addr)
+            return redirect("/profile")
+        log.warning("Невдала спроба входу: користувач=%r, IP=%s", username, request.remote_addr)
         return render_template("login.html", error="Invalid credentials")
     return render_template("login.html")
 
@@ -83,4 +93,5 @@ def profile():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # FIXED (R5, CONF-1): без debug і лише локальний інтерфейс
+    app.run(host="127.0.0.1", port=5000, debug=False)
