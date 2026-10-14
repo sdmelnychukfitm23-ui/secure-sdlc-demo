@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, redirect, make_response, session
+from markupsafe import escape
 import os
 import sqlite3
 
@@ -14,6 +15,21 @@ def get_db():
     return conn
 
 
+@app.after_request
+def set_security_headers(resp):
+    # FIXED (R2, CONF-1): заголовки безпеки
+    resp.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none'; form-action 'self'"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    resp.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    resp.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Server"] = "webserver"
+    return resp
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -21,9 +37,9 @@ def index():
 
 @app.route("/echo")
 def echo():
-    # Vulnerable to reflected XSS (intentionally)
+    # FIXED (R2): екранування користувацького вводу
     msg = request.args.get("msg", "")
-    return f"<h1>Echo</h1><p>{msg}</p>"
+    return f"<h1>Echo</h1><p>{escape(msg)}</p>"
 
 
 @app.route("/search")
